@@ -8,7 +8,7 @@ import numpy as np
 
 
 from Vic.Vicreg import VicReg
-from Vic.utils import criterion, get_byol_transforms
+from Vic.utils import criterion, get_byol_transforms, MultiViewDataInjector
 from tqdm import tqdm
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -26,10 +26,10 @@ transformT, transformT1, transformEvalT = get_byol_transforms(32, (0.485, 0.456,
 #testdt = datasets.ImageNet(root='./data', split = 'val')
 #testloader = torch.utils.data.DataLoader(traindt, batch_size=128, shuffle=True)
 
-trainset = datasets.CIFAR100(root='./data', train=True, download=True, transform=tr.ToTensor())
+trainset = datasets.CIFAR100(root='./data', train=True, download=True, transform=MultiViewDataInjector([transformT, transformT1]))
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True)
 
-testset = datasets.CIFAR100(root='./data', train=False, download=True, transform=tr.ToTensor())
+testset = datasets.CIFAR100(root='./data', train=False, download=True, transform=MultiViewDataInjector([transformT, transformT1]))
 testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False)
 
 lr = base_lr*batch_size/offset_bs
@@ -42,15 +42,14 @@ params = model.parameters()
 optimizer = optim.SGD( params, lr=lr, weight_decay=1.5e-6)
 #scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=)
 
-def train_loop(model, optimizer, trainloader, transform, transform1, criterion, device):
+def train_loop(model, optimizer, trainloader, criterion, device):
     tk0 = tqdm(trainloader)
     train_loss = []
 
-    for batch, _ in tk0:
-        batch = batch.to(device)
+    for (x, x1), _ in tk0:
         
-        x = transform(batch)
-        x1 = transform1(batch)
+        x = x.to(device)
+        x1 = x1.to(device)
 
         fx = model(x)
         fx1 = model(x1)
@@ -60,12 +59,11 @@ def train_loop(model, optimizer, trainloader, transform, transform1, criterion, 
         loss.backward()
         optimizer.step()
 
-        del batch, x, x1, fx, fx1
     return train_loss
 
 
 for epoch in range(epochs):
-    train_loss = train_loop(model, optimizer, trainloader, transformT, transformT1, criterion, torch.device('cuda'))
+    train_loss = train_loop(model, optimizer, trainloader, criterion, torch.device('cuda'))
     print(np.mean(train_loss))
 
 
